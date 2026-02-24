@@ -19,11 +19,6 @@ Hypergraph construction:
   E = { E_0, …, E_{c-1} }  one hyperedge per fuzzy cluster
   Node i belongs to hyperedge E_k  ⟺  U[k, i] >= threshold
   Overlap nodes (|membership| >= 2) embody genuine class ambiguity.
-
-Output: 29 individual PNG figures + REPORT.md  in  ./outputs/
-
-Dependencies:  numpy  matplotlib  scikit-learn  scipy
-Run          :  python fuzzy_cmeans_hypergraph.py
 ===========================================================================
 """
 
@@ -480,7 +475,7 @@ def _draw_hull(ax, pts, color, alpha=0.16, lw=1.8):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# SECTION 6 — PER-DATASET FIGURES  (6 figures per dataset = 24 total)
+# SECTION 6 — PER-DATASET FIGURES 
 # ═══════════════════════════════════════════════════════════════════════════
 
 # ── Figure type A: Ground-truth PCA projection ───────────────────────────
@@ -676,78 +671,6 @@ def fig_membership_heatmap(ds, fcm, hg, idx, n_show=70):
     return save(fig, f"{idx:02d}_{ds['tag']}_E_membership_heatmap.png")
 
 
-# ── Figure type F: Abstract circular hypergraph ──────────────────────────
-
-def fig_abstract_hypergraph(ds, fcm, hg, idx, n_show=55):
-    """
-    Nodes arranged in a circle, sorted by primary cluster assignment.
-    Coloured arcs in the background represent hyperedges.
-    Diamond-bordered nodes are overlap nodes that span multiple hyperedges.
-    This layout emphasises the hypergraph topology independent of feature space.
-    """
-    name    = ds["name"]
-    n_show  = min(n_show, hg.X.shape[0])
-    c       = fcm.n_clusters
-    labels  = fcm.labels_[:n_show]
-    order   = np.argsort(labels)
-    theta   = np.linspace(0, 2 * np.pi, n_show, endpoint=False)
-    pos     = np.column_stack([np.cos(theta), np.sin(theta)])
-
-    fig, ax = plt.subplots(figsize=(7, 7))
-    ax.set_aspect("equal"); ax.axis("off")
-
-    # Draw hyperedge arcs
-    for k in range(c):
-        node_ids = [i for i, orig in enumerate(order)
-                    if orig in hg.hyperedges[k] and i < n_show]
-        if len(node_ids) < 2:
-            continue
-        th_k = theta[node_ids]
-        t0, t1 = th_k.min() - 0.09, th_k.max() + 0.09
-        t_arc  = np.linspace(t0, t1, 80)
-        r_in, r_out = 0.70, 1.02
-        verts = np.vstack([
-            np.c_[r_out * np.cos(t_arc), r_out * np.sin(t_arc)],
-            [[r_in * np.cos(t_arc[-1]), r_in * np.sin(t_arc[-1])]],
-            np.c_[r_in * np.cos(t_arc[::-1]), r_in * np.sin(t_arc[::-1])],
-            [[r_out * np.cos(t_arc[0]), r_out * np.sin(t_arc[0])]]
-        ])
-        ax.add_patch(mpatches.Polygon(verts, closed=True,
-                                      color=PALETTE[k % len(PALETTE)],
-                                      alpha=0.22, lw=0))
-        mid = (t0 + t1) / 2
-        ax.text(1.18 * np.cos(mid), 1.18 * np.sin(mid),
-                f"E{k}", fontsize=11, fontweight="bold",
-                ha="center", va="center",
-                color=PALETTE[k % len(PALETTE)])
-
-    # Draw nodes
-    for i in range(n_show):
-        orig  = order[i]
-        color = PALETTE[labels[i] % len(PALETTE)]
-        is_ov = orig in hg.overlap_nodes
-        ax.scatter(*pos[i], s=70 if is_ov else 38, color=color, zorder=3,
-                   edgecolors="black" if is_ov else "none",
-                   linewidths=1.2 if is_ov else 0)
-
-    ax.set_xlim(-1.45, 1.45); ax.set_ylim(-1.45, 1.45)
-
-    legend_items = [mpatches.Patch(color=PALETTE[k], alpha=0.6, label=f"Hyperedge E{k}")
-                    for k in range(c)]
-    legend_items += [
-        plt.Line2D([0],[0],marker="o",color="w",
-                   markerfacecolor="grey",markeredgecolor="black",
-                   markersize=9, label="Overlap node")]
-    ax.legend(handles=legend_items, fontsize=9,
-              loc="lower right", framealpha=0.9)
-
-    st = hg.stats()
-    ax.set_title(
-        f"{name} — Abstract Hypergraph Structure\n"
-        f"(first {n_show} nodes sorted by cluster; "
-        f"{st['overlap_nodes']} overlap nodes highlighted)",
-        fontsize=12)
-    return save(fig, f"{idx:02d}_{ds['tag']}_F_abstract_hypergraph.png")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1008,157 +931,6 @@ def fig_incidence_matrix(ds, hg, idx):
     return save(fig, f"{idx:02d}_{ds['tag']}_G_incidence_matrix.png")
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# SECTION 8 — REPORT GENERATION
-# ═══════════════════════════════════════════════════════════════════════════
-
-REPORT_TEMPLATE = """\
-# Fuzzy C-Means Clustering with Hypergraph Representation
-### Experiment Report — Real-World UCI Datasets with Overlapping Class Boundaries
-
----
-
-## 1. Overview
-
-This experiment applies **Fuzzy C-Means (FCM)** clustering to four real-world datasets
-sourced from the UCI Machine Learning Repository.  All four datasets share a defining
-characteristic: their class distributions overlap in at least one feature subspace, meaning
-no hard decision boundary can cleanly separate them.  This property makes them natural
-candidates for *soft* clustering, where each sample can simultaneously belong to multiple
-clusters with graded membership values.
-
-The experiment further embeds the clustering result into a **hypergraph** structure:
-each fuzzy cluster becomes one *hyperedge*, and any sample whose membership exceeds a
-threshold in two or more hyperedges becomes an **overlap node** — a formal representation
-of boundary ambiguity.
-
-**Methodology overview:**
-
-| Step | Description |
-|------|-------------|
-| 1 | Load & standardise the four UCI datasets |
-| 2 | Fit Fuzzy C-Means (Bezdek 1981) to each dataset |
-| 3 | Construct a hypergraph H = (V, E) from the fuzzy partition |
-| 4 | Evaluate with 5 internal + 3 external validity indices |
-| 5 | Generate 29 individual visualisation figures |
-
----
-
-## 2. Datasets
-
-{dataset_table}
-
----
-
-## 3. Algorithm
-
-### 3.1 Fuzzy C-Means (FCM)
-
-FCM minimises the weighted sum-of-squared-distances objective:
-
-```
-J_m = Σ_k Σ_i  U[k,i]^m · ||x_i - v_k||²
-```
-
-subject to  `Σ_k U[k,i] = 1`  for all *i*.
-
-The fuzziness exponent *m* (m > 1, default **m = 2.0**; Glass uses m = 2.5 to
-increase membership spread across the 6-class structure) controls the degree of overlap:
-as *m* → 1 the algorithm degenerates to hard k-means; as *m* → ∞ all memberships
-approach 1/c.
-
-The alternating optimisation alternates between:
-- **Centre update:**  `v_k = (Σ_i U[k,i]^m x_i) / (Σ_i U[k,i]^m)`
-- **Membership update:**  `U[k,i] = 1 / Σ_j (d_ik / d_ij)^(2/(m-1))`
-
-Convergence is declared when `max ||U_new - U_old||_∞ < 1e-5`.
-
-### 3.2 Hypergraph Construction
-
-Given the FCM membership matrix **U** (c × n) and a membership threshold τ:
-
-```
-H  = (V, E)
-V  = {{0, …, n-1}}            (all data points as nodes)
-E_k = {{i : U[k,i] ≥ τ}}     (hyperedge k = cluster k)
-```
-
-**Overlap nodes** — samples belonging to ≥ 2 hyperedges — are the formal analogue
-of boundary samples in a crisp partition.  The **incidence matrix** B ∈ {{0,1}}^(n×c)
-encodes membership: `B[i,k] = 1 iff i ∈ E_k`.
-
-A standard graph can represent only pairwise relationships; a hyperedge can connect
-an arbitrary subset of nodes, making the hypergraph the natural structure for multi-cluster
-soft membership.
-
-**Thresholds used:**
-
-| Dataset | Threshold τ | Rationale |
-|---------|-------------|-----------|
-| Iris    | 0.20 | Standard; three well-separated clusters |
-| Wine    | 0.20 | Standard; 13-dimensional features spread clusters |
-| Seeds   | 0.20 | Standard; three similar wheat morphologies |
-| Glass   | 0.12 | Lowered to expose overlap in the 6-class, 9-feature structure |
-
----
-
-## 4. Evaluation Metrics
-
-### 4.1 Internal Indices (no ground truth required)
-
-| Index | Formula / Interpretation | Better |
-|-------|--------------------------|--------|
-| **FPC** (Fuzzy Partition Coefficient) | `Σ U²[k,i] / n`  ∈ [1/c, 1] | Higher |
-| **FPE** (Fuzzy Partition Entropy) | `-Σ U[k,i] log U[k,i] / n`  ∈ [0, log c] | Lower |
-| **XB** (Xie-Beni Index) | Compactness / min-centre-separation | Lower |
-| **Silhouette** | Mean (intra-dist − inter-dist) / max(...) ∈ [-1,1] | Higher |
-| **Davies-Bouldin** | Mean of (σ_k + σ_l) / d(v_k, v_l) | Lower |
-
-### 4.2 External Indices (compare to ground-truth labels)
-
-| Index | Description | Better |
-|-------|-------------|--------|
-| **ARI** (Adjusted Rand Index) | Chance-corrected agreement ∈ [-1, 1] | Higher |
-| **NMI** (Normalised Mutual Info) | Information overlap ∈ [0, 1] | Higher |
-| **FMS** (Fowlkes-Mallows Score) | Geometric mean of precision & recall ∈ [0, 1] | Higher |
-
----
-
-## 5. Results
-
-### 5.1 Metric Summary
-
-{metrics_table}
-
-### 5.2 Hypergraph Statistics
-
-{hypergraph_table}
-
----
-
-## 6. Figure Index
-
-{figure_table}
-
----
-
-## 7. Discussion
-
-{discussion}
-
----
-
-## 8. References
-
-1. Bezdek, J.C. (1981). *Pattern Recognition with Fuzzy Objective Function Algorithms*. Springer.
-2. Fisher, R.A. (1936). The use of multiple measurements in taxonomic problems. *Annals of Eugenics*, 7(2), 179–188.
-3. Aeberhard, S. et al. (1992). Comparative Analysis of Statistical Pattern Recognition Methods. *Pattern Recognition*, 25(10).
-4. Charytanowicz, M. et al. (2010). Complete Gradient Clustering Algorithm for Features Analysis of X-ray Images. *Advances in Intelligent and Soft Computing*, Springer.
-5. German, B. (1987). *Glass Identification Dataset*. UCI Machine Learning Repository.
-6. Xie, X.L., Beni, G. (1991). A validity measure for fuzzy clustering. *IEEE TPAMI*, 13(8), 841–847.
-7. Dua, D. & Graff, C. (2019). UCI Machine Learning Repository. University of California, Irvine.
-"""
-
 
 def format_metrics_table(all_metrics, ds_list):
     header = ("| Dataset | FPC ↑ | FPE ↓ | XB ↓ | "
@@ -1300,7 +1072,7 @@ def write_report(all_metrics, all_hg, ds_list, saved_files):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# SECTION 9 — MAIN
+# SECTION 8 — MAIN
 # ═══════════════════════════════════════════════════════════════════════════
 
 def main():
@@ -1376,15 +1148,6 @@ def main():
     saved.append(fig_summary_table(all_metrics, all_hg, datasets, fig_idx)); fig_idx += 1
     saved.append(fig_membership_dist(all_fcm, all_hg, datasets, fig_idx)); fig_idx += 1
     saved.append(fig_node_degree(all_hg, datasets, fig_idx));   fig_idx += 1
-
-    # ── Write report ─────────────────────────────────────────────────────
-    print(f"\n{'─'*60}")
-    print("  Writing REPORT.md …")
-    report_path = write_report(all_metrics, all_hg, datasets, saved)
-
-    print(f"\n{'─'*60}")
-    print(f"  Done!  {len(saved)} figures + REPORT.md → {OUT_DIR}/")
-    return saved, report_path
 
 
 if __name__ == "__main__":
